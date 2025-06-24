@@ -21,28 +21,17 @@ Resources:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Sub "${AWS::StackName}-receipts-${Environment}"
-      PublicReadPolicy: false
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
       CorsConfiguration:
         CorsRules:
           - AllowedHeaders: ['*']
             AllowedMethods: [GET, PUT, POST, DELETE, HEAD]
             AllowedOrigins: ['*']
             MaxAge: 3000
-      NotificationConfiguration:
-        LambdaConfigurations:
-          - Event: s3:ObjectCreated:*
-            Function: !GetAtt ReceiptProcessorFunction.Arn
-            Filter:
-              S3Key:
-                Rules:
-                  - Name: suffix
-                    Value: .jpg
-                  - Name: suffix
-                    Value: .jpeg
-                  - Name: suffix
-                    Value: .png
-                  - Name: suffix
-                    Value: .pdf
 
   # Lambda function for processing receipts
   ReceiptProcessorFunction:
@@ -97,6 +86,7 @@ Resources:
       Principal: s3.amazonaws.com
       Action: lambda:InvokeFunction
       SourceArn: !Sub "${ReceiptUploadBucket}/*"
+
 
   # API Gateway for frontend integration
   ReceiptAnalyzerApi:

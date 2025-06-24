@@ -1,4 +1,3 @@
-const AWS = require('aws-sdk');
 const { TextractClient, AnalyzeExpenseCommand } = require('@aws-sdk/client-textract');
 
 const textract = new TextractClient({ region: process.env.AWS_REGION || 'us-east-1' });

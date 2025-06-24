@@ -1,7 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "Bash(mkdir:*)"
+      "Bash(mkdir:*)",
+      "Bash(find:*)",
+      "Bash(node:*)",
+      "Bash(sam validate:*)",
+      "Bash(pnpm install:*)",
+      "Bash(ls:*)"
     ],
     "deny": []
   }
