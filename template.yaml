@@ -1,0 +1,193 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Smart Receipt Analyzer - AWS Lambda Hackathon Project
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 256
+    Runtime: nodejs18.x
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, prod]
+    Description: Environment name
+
+Resources:
+  # S3 Bucket for receipt uploads
+  ReceiptUploadBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${AWS::StackName}-receipts-${Environment}"
+      PublicReadPolicy: false
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ['*']
+            AllowedMethods: [GET, PUT, POST, DELETE, HEAD]
+            AllowedOrigins: ['*']
+            MaxAge: 3000
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Function: !GetAtt ReceiptProcessorFunction.Arn
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: suffix
+                    Value: .jpg
+                  - Name: suffix
+                    Value: .jpeg
+                  - Name: suffix
+                    Value: .png
+                  - Name: suffix
+                    Value: .pdf
+
+  # Lambda function for processing receipts
+  ReceiptProcessorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-receipt-processor"
+      CodeUri: src/
+      Handler: index.handler
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref ReceiptUploadBucket
+          AWS_REGION: !Ref AWS::Region
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref ReceiptUploadBucket
+        - Statement:
+            - Effect: Allow
+              Action:
+                - textract:AnalyzeExpense
+                - textract:AnalyzeDocument
+              Resource: '*'
+        - Statement:
+            - Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource: '*'
+      Events:
+        S3Event:
+          Type: S3
+          Properties:
+            Bucket: !Ref ReceiptUploadBucket
+            Events: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: suffix
+                    Value: .jpg
+                  - Name: suffix
+                    Value: .jpeg
+                  - Name: suffix
+                    Value: .png
+                  - Name: suffix
+                    Value: .pdf
+
+  # Lambda permission for S3 to invoke function
+  S3InvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ReceiptProcessorFunction
+      Principal: s3.amazonaws.com
+      Action: lambda:InvokeFunction
+      SourceArn: !Sub "${ReceiptUploadBucket}/*"
+
+  # API Gateway for frontend integration
+  ReceiptAnalyzerApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub "${AWS::StackName}-api"
+      StageName: !Ref Environment
+      Cors:
+        AllowMethods: "'GET,POST,OPTIONS'"
+        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+        AllowOrigin: "'*'"
+
+  # Lambda function for API responses (optional - for direct API calls)
+  ApiResponseFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-api-response"
+      CodeUri: src/
+      Handler: index.handler
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref ReceiptUploadBucket
+          AWS_REGION: !Ref AWS::Region
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref ReceiptUploadBucket
+        - Statement:
+            - Effect: Allow
+              Action:
+                - textract:AnalyzeExpense
+                - textract:AnalyzeDocument
+              Resource: '*'
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ReceiptAnalyzerApi
+            Path: /process
+            Method: post
+
+  # IAM Role for Lambda execution
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-lambda-execution-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: S3AndTextractAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "${ReceiptUploadBucket}/*"
+              - Effect: Allow
+                Action:
+                  - textract:AnalyzeExpense
+                  - textract:AnalyzeDocument
+                Resource: '*'
+
+Outputs:
+  ReceiptUploadBucketName:
+    Description: Name of S3 bucket for receipt uploads
+    Value: !Ref ReceiptUploadBucket
+    Export:
+      Name: !Sub "${AWS::StackName}-bucket-name"
+
+  LambdaFunctionArn:
+    Description: ARN of the receipt processor Lambda function
+    Value: !GetAtt ReceiptProcessorFunction.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-lambda-arn"
+
+  ApiGatewayUrl:
+    Description: URL for API Gateway
+    Value: !Sub "https://${ReceiptAnalyzerApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}/"
+    Export:
+      Name: !Sub "${AWS::StackName}-api-url"
+
+  BucketRegion:
+    Description: AWS Region for S3 bucket
+    Value: !Ref AWS::Region
+    Export:
+      Name: !Sub "${AWS::StackName}-region"
