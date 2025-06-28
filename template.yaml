@@ -78,7 +78,7 @@ Resources:
                   - Name: suffix
                     Value: .pdf
 
-  # Lambda permission for S3 to invoke function
+  # Lambda permission for S3 to invoke function  
   S3InvokePermission:
     Type: AWS::Lambda::Permission
     Properties:
@@ -86,7 +86,6 @@ Resources:
       Principal: s3.amazonaws.com
       Action: lambda:InvokeFunction
       SourceArn: !Sub "${ReceiptUploadBucket}/*"
-
 
   # API Gateway for frontend integration
   ReceiptAnalyzerApi:
@@ -127,35 +126,6 @@ Resources:
             Path: /process
             Method: post
 
-  # IAM Role for Lambda execution
-  LambdaExecutionRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: !Sub "${AWS::StackName}-lambda-execution-role"
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: lambda.amazonaws.com
-            Action: sts:AssumeRole
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-      Policies:
-        - PolicyName: S3AndTextractAccess
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - s3:GetObject
-                  - s3:PutObject
-                Resource: !Sub "${ReceiptUploadBucket}/*"
-              - Effect: Allow
-                Action:
-                  - textract:AnalyzeExpense
-                  - textract:AnalyzeDocument
-                Resource: '*'
 
 Outputs:
   ReceiptUploadBucketName:

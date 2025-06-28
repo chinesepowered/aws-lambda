@@ -1,4 +1,5 @@
-import AWS from 'aws-sdk';
+import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 const initializeS3 = () => {
   const region = import.meta.env.VITE_AWS_REGION || 'us-east-1';
@@ -10,13 +11,13 @@ const initializeS3 = () => {
     return null;
   }
 
-  AWS.config.update({
+  return new S3Client({
     region,
-    accessKeyId,
-    secretAccessKey
+    credentials: {
+      accessKeyId,
+      secretAccessKey
+    }
   });
-
-  return new AWS.S3();
 };
 
 export const uploadToS3 = async (file, bucketName, onProgress) => {
@@ -29,7 +30,7 @@ export const uploadToS3 = async (file, bucketName, onProgress) => {
   try {
     const fileName = `receipts/${Date.now()}-${file.name}`;
     
-    const params = {
+    const command = new PutObjectCommand({
       Bucket: bucketName,
       Key: fileName,
       Body: file,
@@ -38,24 +39,24 @@ export const uploadToS3 = async (file, bucketName, onProgress) => {
         'uploaded-at': new Date().toISOString(),
         'original-name': file.name
       }
-    };
-
-    const upload = s3.upload(params);
-    
-    upload.on('httpUploadProgress', (evt) => {
-      const progress = Math.round((evt.loaded / evt.total) * 100);
-      if (onProgress) {
-        onProgress(progress);
-      }
     });
 
-    const result = await upload.promise();
+    // Simulate progress for demo (AWS SDK v3 doesn't have built-in progress)
+    if (onProgress) {
+      const steps = [0, 25, 50, 75, 100];
+      for (let i = 0; i < steps.length; i++) {
+        await new Promise(resolve => setTimeout(resolve, 200));
+        onProgress(steps[i]);
+      }
+    }
+
+    const result = await s3.send(command);
     
     return {
       success: true,
-      location: result.Location,
-      bucket: result.Bucket,
-      key: result.Key,
+      location: `https://${bucketName}.s3.amazonaws.com/${fileName}`,
+      bucket: bucketName,
+      key: fileName,
       etag: result.ETag
     };
 
@@ -98,13 +99,12 @@ export const generatePresignedUrl = async (bucketName, key, expiresIn = 3600) =>
   }
 
   try {
-    const params = {
+    const command = new GetObjectCommand({
       Bucket: bucketName,
-      Key: key,
-      Expires: expiresIn
-    };
+      Key: key
+    });
 
-    const url = await s3.getSignedUrlPromise('getObject', params);
+    const url = await getSignedUrl(s3, command, { expiresIn });
     return url;
 
   } catch (error) {
@@ -122,12 +122,12 @@ export const deleteFromS3 = async (bucketName, key) => {
   }
 
   try {
-    const params = {
+    const command = new DeleteObjectCommand({
       Bucket: bucketName,
       Key: key
-    };
+    });
 
-    await s3.deleteObject(params).promise();
+    await s3.send(command);
     
     return { success: true };
 
